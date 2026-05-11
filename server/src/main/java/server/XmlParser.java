@@ -89,7 +89,6 @@ public class XmlParser {
             return null;
         }
 
-        // Проверка, что файл является XML
         try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))) {
             bis.mark(100);
             byte[] header = new byte[100];

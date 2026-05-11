@@ -39,7 +39,6 @@ public class Client {
             String[] parts = input.split("\\s+");
             String command = parts[0].toLowerCase();
 
-            // Команда exit завершает клиент (не отправляется на сервер)
             if (command.equals("exit")) {
                 break;
             }
@@ -80,7 +79,6 @@ public class Client {
         System.out.println("Клиент завершён");
     }
 
-    // Подключение к серверу с повторными попытками
     private boolean connectToServer() {
         for (int attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
             try {
@@ -105,7 +103,6 @@ public class Client {
         return false;
     }
 
-    // Переподключение при потере связи
     private void reconnect() {
         closeConnection();
         connected = false;
@@ -124,7 +121,7 @@ public class Client {
             if (out != null) out.close();
             if (socket != null) socket.close();
         } catch (IOException e) {
-            // игнорируем
+
         }
     }
 

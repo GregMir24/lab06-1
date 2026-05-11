@@ -37,7 +37,6 @@ public class CollectionManager {
         return collection.get(key);
     }
 
-    // showAll с использованием Stream API
     public void showAll() {
         if (collection.isEmpty()) {
             System.out.println("Коллекция пуста");
@@ -48,7 +47,6 @@ public class CollectionManager {
                 .forEach(System.out::println);
     }
 
-    // info с использованием Stream API
     public void info() {
         System.out.println("Тип коллекции: " + collection.getClass().getSimpleName());
         System.out.println("Дата инициализации: " + initDate);
@@ -59,7 +57,6 @@ public class CollectionManager {
         }
     }
 
-    // insert
     public void insert(String key, Vehicle vehicle) {
         if (key == null || vehicle == null) {
             throw new IllegalArgumentException("Ключ и объект не могут быть null");
@@ -71,7 +68,6 @@ public class CollectionManager {
         System.out.println("Элемент с ключом '" + key + "' добавлен");
     }
 
-    // remove
     public void remove(String key) {
         if (key == null) {
             throw new IllegalArgumentException("Ключ не может быть null");
@@ -83,13 +79,11 @@ public class CollectionManager {
         System.out.println("Элемент с ключом '" + key + "' удалён");
     }
 
-    // clear
     public void clear() {
         collection.clear();
         System.out.println("Коллекция очищена");
     }
 
-    // removeGreaterKey с использованием Stream API
     public void removeGreaterKey(String keyThreshold) {
         if (keyThreshold == null) {
             throw new IllegalArgumentException("Ключ не может быть null");
@@ -101,7 +95,6 @@ public class CollectionManager {
         System.out.println("Удалено элементов: " + toRemove.size());
     }
 
-    // countLessThanType с использованием Stream API
     public int countLessThanType(VehicleType type) {
         if (type == null) {
             throw new IllegalArgumentException("Тип не может быть null");
@@ -112,7 +105,6 @@ public class CollectionManager {
                 .count();
     }
 
-    // filterLessThanFuelConsumption с использованием Stream API
     public void filterLessThanFuelConsumption(float threshold) {
         List<Vehicle> result = collection.values().stream()
                 .filter(v -> v.getFuelConsumption() != null)
@@ -127,7 +119,6 @@ public class CollectionManager {
         }
     }
 
-    // printFieldAscendingType с использованием Stream API
     public void printFieldAscendingType() {
         List<VehicleType> types = collection.values().stream()
                 .map(Vehicle::getType)
@@ -144,7 +135,6 @@ public class CollectionManager {
         }
     }
 
-    // update
     public void update(int id, Vehicle newVehicle) {
         if (newVehicle == null) {
             throw new IllegalArgumentException("Vehicle не может быть null");
@@ -165,7 +155,6 @@ public class CollectionManager {
         System.out.println("Элемент с id " + id + " обновлён");
     }
 
-    // replace
     public void replace(String key, Vehicle newVehicle) {
         if (key == null || key.trim().isEmpty()) {
             throw new IllegalArgumentException("Ключ не может быть пустым");
@@ -180,7 +169,6 @@ public class CollectionManager {
         System.out.println("Элемент с ключом '" + key + "' заменён");
     }
 
-    // saveToFile
     public void saveToFile(String filename, XmlParser parser) {
         if (filename == null || filename.trim().isEmpty()) {
             System.out.println("Ошибка: не указано имя файла");
