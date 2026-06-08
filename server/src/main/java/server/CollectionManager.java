@@ -1,23 +1,42 @@
 package server;
 
 import common.*;
-
-import java.io.File;
 import java.time.ZonedDateTime;
 import java.util.*;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 public class CollectionManager {
-    private HashMap<String, Vehicle> collection;
+    private Map<String, Vehicle> collection;
     private ZonedDateTime initDate;
+    private DatabaseManager dbManager;
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
-    public CollectionManager(HashMap<String, Vehicle> collection) {
-        this.collection = collection;
+    public CollectionManager(DatabaseManager dbManager) {
+        this.dbManager = dbManager;
+        this.collection = Collections.synchronizedMap(new HashMap<>());
         this.initDate = ZonedDateTime.now();
+        loadFromDatabase();
     }
 
-    public HashMap<String, Vehicle> getCollection() {
-        return collection;
+    private void loadFromDatabase() {
+        HashMap<String, Vehicle> loaded = dbManager.loadAllVehicles();
+        lock.writeLock().lock();
+        try {
+            collection.putAll(loaded);
+        } finally {
+            lock.writeLock().unlock();
+        }
+        System.out.println("Загружено " + collection.size() + " элементов из БД");
+    }
+
+    public Map<String, Vehicle> getCollection() {
+        lock.readLock().lock();
+        try {
+            return new HashMap<>(collection);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public ZonedDateTime getInitDate() {
@@ -25,167 +44,195 @@ public class CollectionManager {
     }
 
     public int size() {
-        return collection.size();
+        lock.readLock().lock();
+        try {
+            return collection.size();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public boolean isEmpty() {
-        return collection.isEmpty();
+        lock.readLock().lock();
+        try {
+            return collection.isEmpty();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public Vehicle getByKey(String key) {
-        if (key == null) return null;
-        return collection.get(key);
-    }
-
-    public void showAll() {
-        if (collection.isEmpty()) {
-            System.out.println("Коллекция пуста");
-            return;
-        }
-        collection.values().stream()
-                .sorted(Comparator.comparing(Vehicle::getId))
-                .forEach(System.out::println);
-    }
-
-    public void info() {
-        System.out.println("Тип коллекции: " + collection.getClass().getSimpleName());
-        System.out.println("Дата инициализации: " + initDate);
-        System.out.println("Количество элементов: " + collection.size());
-        if (!collection.isEmpty()) {
-            System.out.println("Ключи: " + collection.keySet().stream()
-                    .collect(Collectors.joining(", ")));
+        lock.readLock().lock();
+        try {
+            return collection.get(key);
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
-    public void insert(String key, Vehicle vehicle) {
-        if (key == null || vehicle == null) {
-            throw new IllegalArgumentException("Ключ и объект не могут быть null");
+    public String showAll() {
+        lock.readLock().lock();
+        try {
+            if (collection.isEmpty()) {
+                return "Коллекция пуста";
+            }
+            return collection.values().stream()
+                    .sorted(Comparator.comparing(Vehicle::getId))
+                    .map(Vehicle::toString)
+                    .collect(Collectors.joining("\n"));
+        } finally {
+            lock.readLock().unlock();
         }
-        if (collection.containsKey(key)) {
-            throw new IllegalArgumentException("Ключ '" + key + "' уже существует");
-        }
-        collection.put(key, vehicle);
-        System.out.println("Элемент с ключом '" + key + "' добавлен");
     }
 
-    public void remove(String key) {
-        if (key == null) {
-            throw new IllegalArgumentException("Ключ не может быть null");
+    public String info() {
+        lock.readLock().lock();
+        try {
+            return String.format("Тип коллекции: %s\nДата инициализации: %s\nКоличество элементов: %d",
+                    collection.getClass().getSimpleName(), initDate, collection.size());
+        } finally {
+            lock.readLock().unlock();
         }
-        Vehicle removed = collection.remove(key);
-        if (removed == null) {
-            throw new IllegalArgumentException("Ключ '" + key + "' не найден");
-        }
-        System.out.println("Элемент с ключом '" + key + "' удалён");
     }
 
-    public void clear() {
-        collection.clear();
-        System.out.println("Коллекция очищена");
+    public boolean insert(String key, Vehicle vehicle, String owner) {
+        int id = dbManager.insertVehicle(vehicle, owner);
+        if (id > 0) {
+            lock.writeLock().lock();
+            try {
+                collection.put(String.valueOf(id), vehicle);
+            } finally {
+                lock.writeLock().unlock();
+            }
+            return true;
+        }
+        return false;
     }
 
-    public void removeGreaterKey(String keyThreshold) {
-        if (keyThreshold == null) {
-            throw new IllegalArgumentException("Ключ не может быть null");
+    public boolean update(int id, Vehicle newVehicle, String owner) {
+        if (dbManager.updateVehicle(id, newVehicle, owner)) {
+            lock.writeLock().lock();
+            try {
+                collection.put(String.valueOf(id), newVehicle);
+            } finally {
+                lock.writeLock().unlock();
+            }
+            return true;
         }
-        List<String> toRemove = collection.keySet().stream()
-                .filter(key -> key.compareTo(keyThreshold) > 0)
-                .collect(Collectors.toList());
-        toRemove.forEach(collection::remove);
-        System.out.println("Удалено элементов: " + toRemove.size());
+        return false;
+    }
+
+    public boolean remove(String key, String owner) {
+        if (dbManager.deleteVehicle(key, owner)) {
+            lock.writeLock().lock();
+            try {
+                collection.remove(key);
+            } finally {
+                lock.writeLock().unlock();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public void clear(String owner) {
+        dbManager.clearCollection(owner);
+        lock.writeLock().lock();
+        try {
+            collection.entrySet().removeIf(entry -> entry.getValue().getOwner().equals(owner));
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public boolean removeGreaterKey(String keyThreshold, String owner) {
+        if (dbManager.deleteGreaterKeys(keyThreshold, owner)) {
+            lock.writeLock().lock();
+            try {
+                int threshold = Integer.parseInt(keyThreshold);
+                collection.entrySet().removeIf(entry -> {
+                    int id = Integer.parseInt(entry.getKey());
+                    return id > threshold && entry.getValue().getOwner().equals(owner);
+                });
+            } finally {
+                lock.writeLock().unlock();
+            }
+            return true;
+        }
+        return false;
     }
 
     public int countLessThanType(VehicleType type) {
-        if (type == null) {
-            throw new IllegalArgumentException("Тип не может быть null");
-        }
-        return (int) collection.values().stream()
-                .filter(v -> v.getType() != null)
-                .filter(v -> v.getType().ordinal() < type.ordinal())
-                .count();
-    }
-
-    public void filterLessThanFuelConsumption(float threshold) {
-        List<Vehicle> result = collection.values().stream()
-                .filter(v -> v.getFuelConsumption() != null)
-                .filter(v -> v.getFuelConsumption() < threshold)
-                .collect(Collectors.toList());
-
-        if (result.isEmpty()) {
-            System.out.println("Нет элементов с расходом < " + threshold);
-        } else {
-            System.out.println("Элементы с расходом < " + threshold + ":");
-            result.forEach(System.out::println);
-        }
-    }
-
-    public void printFieldAscendingType() {
-        List<VehicleType> types = collection.values().stream()
-                .map(Vehicle::getType)
-                .filter(Objects::nonNull)
-                .distinct()
-                .sorted(Comparator.comparingInt(Enum::ordinal))
-                .collect(Collectors.toList());
-
-        if (types.isEmpty()) {
-            System.out.println("Нет элементов с типами");
-        } else {
-            System.out.println("Типы в порядке возрастания:");
-            types.forEach(System.out::println);
-        }
-    }
-
-    public void update(int id, Vehicle newVehicle) {
-        if (newVehicle == null) {
-            throw new IllegalArgumentException("Vehicle не может быть null");
-        }
-
-        String foundKey = collection.entrySet().stream()
-                .filter(entry -> entry.getValue().getId() == id)
-                .map(Map.Entry::getKey)
-                .findFirst()
-                .orElse(null);
-
-        if (foundKey == null) {
-            throw new IllegalArgumentException("Элемент с id " + id + " не найден");
-        }
-
-        newVehicle.setId(id);
-        collection.put(foundKey, newVehicle);
-        System.out.println("Элемент с id " + id + " обновлён");
-    }
-
-    public void replace(String key, Vehicle newVehicle) {
-        if (key == null || key.trim().isEmpty()) {
-            throw new IllegalArgumentException("Ключ не может быть пустым");
-        }
-        if (newVehicle == null) {
-            throw new IllegalArgumentException("Vehicle не может быть null");
-        }
-        if (!collection.containsKey(key)) {
-            throw new IllegalArgumentException("Ключ '" + key + "' не найден");
-        }
-        collection.put(key, newVehicle);
-        System.out.println("Элемент с ключом '" + key + "' заменён");
-    }
-
-    public void saveToFile(String filename, XmlParser parser) {
-        if (filename == null || filename.trim().isEmpty()) {
-            System.out.println("Ошибка: не указано имя файла");
-            return;
-        }
-
-        if (collection.isEmpty()) {
-            System.out.println("Коллекция пуста, сохранение не требуется");
-            return;
-        }
-
+        lock.readLock().lock();
         try {
-            VehicleCollection saveCollection = new VehicleCollection(this.collection);
-            parser.saveObj(new File(filename), saveCollection);
-            System.out.println("Коллекция сохранена в файл: " + filename);
-        } catch (Exception e) {
-            System.out.println("Ошибка при сохранении: " + e.getMessage());
+            return (int) collection.values().stream()
+                    .filter(v -> v.getType() != null)
+                    .filter(v -> v.getType().ordinal() < type.ordinal())
+                    .count();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public List<Vehicle> filterLessThanFuelConsumption(float threshold) {
+        lock.readLock().lock();
+        try {
+            return collection.values().stream()
+                    .filter(v -> v.getFuelConsumption() != null)
+                    .filter(v -> v.getFuelConsumption() < threshold)
+                    .collect(Collectors.toList());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public List<VehicleType> getSortedTypes() {
+        lock.readLock().lock();
+        try {
+            return collection.values().stream()
+                    .map(Vehicle::getType)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .sorted(Comparator.comparingInt(Enum::ordinal))
+                    .collect(Collectors.toList());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public boolean replaceIfLower(String key, Vehicle newVehicle, String owner) {
+        lock.writeLock().lock();
+        try {
+            Vehicle oldVehicle = collection.get(key);
+            if (oldVehicle == null) {
+                return false;
+            }
+            if (!oldVehicle.getOwner().equals(owner)) {
+                return false;
+            }
+            if (newVehicle.compareTo(oldVehicle) < 0) {
+                int id = Integer.parseInt(key);
+                lock.writeLock().unlock(); // Временный unlock для вызова update
+                boolean result = update(id, newVehicle, owner);
+                lock.writeLock().lock();
+                return result;
+            }
+            return false;
+        } finally {
+            if (lock.isWriteLockedByCurrentThread()) {
+                lock.writeLock().unlock();
+            }
+        }
+    }
+
+    public boolean checkOwnership(String key, String owner) {
+        lock.readLock().lock();
+        try {
+            Vehicle vehicle = collection.get(key);
+            if (vehicle == null) return false;
+            return vehicle.getOwner().equals(owner);
+        } finally {
+            lock.readLock().unlock();
         }
     }
 }

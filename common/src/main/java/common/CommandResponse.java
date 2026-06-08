@@ -9,7 +9,6 @@ public class CommandResponse implements Serializable {
     private boolean success;
     private String message;
     private List<Vehicle> vehicles;
-    private String info;
 
     public CommandResponse(boolean success, String message) {
         this.success = success;

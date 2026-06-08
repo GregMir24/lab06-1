@@ -10,191 +10,145 @@ public class Client {
     private ObjectOutputStream out;
     private ObjectInputStream in;
     private Scanner scanner;
-    private boolean connected;
-
-    private static final String SERVER_HOST = "localhost";
-    private static final int SERVER_PORT = 8888;
-    private static final int MAX_RECONNECT_ATTEMPTS = 5;
-    private static final int RECONNECT_DELAY = 2000;
+    private User currentUser;
 
     public void start() {
         scanner = new Scanner(System.in);
 
-        // Подключение к серверу
-        if (!connectToServer()) {
-            System.out.println("Не удалось подключиться к серверу. Программа завершена.");
-            return;
-        }
+        try {
+            socket = new Socket("localhost", 8787);
+            out = new ObjectOutputStream(socket.getOutputStream());
+            out.flush();
+            in = new ObjectInputStream(socket.getInputStream());
+            System.out.println("Подключен к серверу");
 
-        System.out.println("Подключение к серверу установлено. Введите 'help' для списка команд.");
+            boolean authenticated = false;
+            while (!authenticated) {
+                System.out.print("Введите login или register: ");
+                String input = scanner.nextLine().trim();
 
-        while (connected) {
-            System.out.print("> ");
-            String input = scanner.nextLine().trim();
-
-            if (input.isEmpty()) {
-                continue;
-            }
-
-            String[] parts = input.split("\\s+");
-            String command = parts[0].toLowerCase();
-
-            if (command.equals("exit")) {
-                break;
-            }
-
-            try {
-                CommandRequest request = buildRequest(command, parts);
-                if (request == null) {
-                    continue;
-                }
-
-                out.writeObject(request);
+                out.writeObject(new CommandRequest(input, new String[0]));
                 out.flush();
 
                 CommandResponse response = (CommandResponse) in.readObject();
 
-                if (response.isSuccess()) {
+                if (response.getMessage().equals("Введите login или register:")) {
+                    response = (CommandResponse) in.readObject();
+                }
+
+                if ("register".equals(input) || "login".equals(input)) {
+                    System.out.print("Логин: ");
+                    String login = scanner.nextLine();
+                    out.writeObject(new CommandRequest(login, new String[0]));
+                    out.flush();
+
+                    response = (CommandResponse) in.readObject();
+                    System.out.print("Пароль: ");
+                    String pass = scanner.nextLine();
+                    out.writeObject(new CommandRequest(pass, new String[0]));
+                    out.flush();
+
+                    response = (CommandResponse) in.readObject();
                     System.out.println(response.getMessage());
-                    if (response.getVehicles() != null && !response.getVehicles().isEmpty()) {
-                        response.getVehicles().forEach(System.out::println);
-                    }
-                } else {
-                    System.err.println("Ошибка: " + response.getMessage());
-                }
 
-            } catch (SocketException e) {
-                System.out.println("Соединение с сервером потеряно. Попытка переподключения...");
-                reconnect();
-            } catch (IOException e) {
-                System.out.println("Ошибка связи с сервером: " + e.getMessage());
-                reconnect();
-            } catch (ClassNotFoundException e) {
-                System.out.println("Ошибка при получении ответа от сервера");
-            }
-        }
-
-        closeConnection();
-        scanner.close();
-        System.out.println("Клиент завершён");
-    }
-
-    private boolean connectToServer() {
-        for (int attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
-            try {
-                socket = new Socket();
-                socket.connect(new InetSocketAddress(SERVER_HOST, SERVER_PORT), 5000);
-                out = new ObjectOutputStream(socket.getOutputStream());
-                in = new ObjectInputStream(socket.getInputStream());
-                connected = true;
-                return true;
-            } catch (IOException e) {
-                System.out.println("Попытка подключения " + attempt + "/" + MAX_RECONNECT_ATTEMPTS + " не удалась");
-                if (attempt < MAX_RECONNECT_ATTEMPTS) {
-                    try {
-                        Thread.sleep(RECONNECT_DELAY);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
+                    if (response.isSuccess()) {
+                        currentUser = new User(login, pass);
+                        currentUser.setAuthenticated(true);
+                        response = (CommandResponse) in.readObject();
+                        System.out.println(response.getMessage());
+                        authenticated = true;
+                        break;
+                    } else {
+                        System.out.println("Повторите попытку.");
+                        System.out.println("-----------------------------------");
                     }
                 }
             }
-        }
-        connected = false;
-        return false;
-    }
+            while (true) {
+                System.out.print("> ");
+                String input = scanner.nextLine().trim();
+                if (input.equals("exit")) break;
 
-    private void reconnect() {
-        closeConnection();
-        connected = false;
+                CommandRequest request = buildRequest(input);
+                if (request == null) continue;
+                request.setUser(currentUser);
 
-        System.out.println("Переподключение к серверу...");
-        if (connectToServer()) {
-            System.out.println("Переподключение успешно!");
-        } else {
-            System.out.println("Не удалось переподключиться. Клиент завершён.");
-        }
-    }
+                out.writeObject(request);
+                out.flush();
 
-    private void closeConnection() {
-        try {
-            if (in != null) in.close();
-            if (out != null) out.close();
-            if (socket != null) socket.close();
-        } catch (IOException e) {
+                CommandResponse resp = (CommandResponse) in.readObject();
+                System.out.println(resp.getMessage());
+            }
 
+        } catch (Exception e) {
+            System.err.println("Ошибка: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            try { socket.close(); } catch (IOException e) {}
+            scanner.close();
         }
     }
 
-    private CommandRequest buildRequest(String command, String[] parts) {
+    private CommandRequest buildRequest(String input) {
+        String[] parts = input.split("\\s+");
+        String command = parts[0].toLowerCase();
+
         switch (command) {
             case "help":
             case "info":
             case "show":
             case "clear":
+            case "print_field_ascending_type":
                 return new CommandRequest(command, new String[0]);
 
             case "insert":
                 if (parts.length < 2) {
-                    System.out.println("Ошибка: укажите ключ. Использование: insert <ключ>");
+                    System.out.println("Нужен ключ");
                     return null;
                 }
-                String key = parts[1];
-                System.out.println("Введите данные нового элемента:");
-                Vehicle vehicle = readVehicleFromConsole();
-                if (vehicle == null) {
-                    return null;
-                }
-                return new CommandRequest(command, key, vehicle);
+                System.out.println("Введите данные:");
+                Vehicle v = readVehicle();
+                return v == null ? null : new CommandRequest("insert", parts[1], v);
 
             case "update":
                 if (parts.length < 2) {
-                    System.out.println("Ошибка: укажите ID. Использование: update <id>");
+                    System.out.println("Нужен ID");
                     return null;
                 }
-                System.out.println("Введите новые данные:");
-                Vehicle updatedVehicle = readVehicleFromConsole();
-                if (updatedVehicle == null) {
-                    return null;
-                }
-                updatedVehicle.setId(Integer.parseInt(parts[1]));
-                return new CommandRequest(command, new String[]{parts[1]}, updatedVehicle);
+                System.out.println("Введите данные:");
+                Vehicle v2 = readVehicle();
+                return v2 == null ? null : new CommandRequest("update", new String[]{parts[1]}, v2);
 
             case "remove_key":
             case "remove_greater_key":
                 if (parts.length < 2) {
-                    System.out.println("Ошибка: укажите ключ");
+                    System.out.println("Нужен ключ");
                     return null;
                 }
                 return new CommandRequest(command, new String[]{parts[1]});
 
             case "replace_if_lowe":
                 if (parts.length < 2) {
-                    System.out.println("Ошибка: укажите ключ");
+                    System.out.println("Нужен ключ");
                     return null;
                 }
-                System.out.println("Введите новый объект для сравнения:");
-                Vehicle newVehicle = readVehicleFromConsole();
-                if (newVehicle == null) {
-                    return null;
-                }
-                return new CommandRequest(command, new String[]{parts[1]}, newVehicle);
+                System.out.println("Введите данные:");
+                Vehicle v3 = readVehicle();
+                return v3 == null ? null : new CommandRequest(command, new String[]{parts[1]}, v3);
 
             case "count_less_than_type":
                 if (parts.length < 2) {
-                    System.out.println("Ошибка: укажите тип (PLANE, SUBMARINE, MOTORCYCLE)");
+                    System.out.println("Нужен тип");
                     return null;
                 }
                 return new CommandRequest(command, new String[]{parts[1].toUpperCase()});
 
             case "filter_less_than_fuel_consumption":
                 if (parts.length < 2) {
-                    System.out.println("Ошибка: укажите число");
+                    System.out.println("Нужно число");
                     return null;
                 }
                 return new CommandRequest(command, new String[]{parts[1]});
-
-            case "print_field_ascending_type":
-                return new CommandRequest(command, new String[0]);
 
             default:
                 System.out.println("Неизвестная команда: " + command);
@@ -202,105 +156,33 @@ public class Client {
         }
     }
 
-    private Vehicle readVehicleFromConsole() {
-        Vehicle vehicle = new Vehicle();
-
-        while (true) {
-            System.out.print("Введите имя: ");
-            String name = scanner.nextLine().trim();
-            if (name.isEmpty()) {
-                System.out.println("Имя не может быть пустым");
-                continue;
-            }
-            try {
-                vehicle.setName(name);
-                break;
-            } catch (IllegalArgumentException e) {
-                System.out.println("Ошибка: " + e.getMessage());
-            }
+    private Vehicle readVehicle() {
+        Vehicle v = new Vehicle();
+        try {
+            System.out.print("Имя: ");
+            v.setName(scanner.nextLine().trim());
+            System.out.print("X: ");
+            long x = Long.parseLong(scanner.nextLine().trim());
+            System.out.print("Y: ");
+            int y = Integer.parseInt(scanner.nextLine().trim());
+            v.setCoordinates(new Coordinates(x, y));
+            System.out.print("Мощность (>0): ");
+            v.setEnginePower(Float.parseFloat(scanner.nextLine().trim()));
+            System.out.print("Расход (Enter для null): ");
+            String fuel = scanner.nextLine().trim();
+            if (!fuel.isEmpty()) v.setFuelConsumption(Integer.parseInt(fuel));
+            System.out.print("Тип (PLANE, SUBMARINE, MOTORCYCLE): ");
+            v.setType(VehicleType.valueOf(scanner.nextLine().trim().toUpperCase()));
+            System.out.print("Топливо (KEROSENE, DIESEL, NUCLEAR): ");
+            v.setFuelType(FuelType.valueOf(scanner.nextLine().trim().toUpperCase()));
+        } catch (Exception e) {
+            System.out.println("Ошибка: " + e.getMessage());
+            return null;
         }
-
-        while (true) {
-            try {
-                System.out.print("Введите X (целое число): ");
-                long x = Long.parseLong(scanner.nextLine().trim());
-                System.out.print("Введите Y (целое число): ");
-                int y = Integer.parseInt(scanner.nextLine().trim());
-
-                Coordinates coords = new Coordinates(x, y);
-                vehicle.setCoordinates(coords);
-                break;
-            } catch (NumberFormatException e) {
-                System.out.println("Ошибка: введите целое число");
-            }
-        }
-
-        while (true) {
-            try {
-                System.out.print("Введите мощность (число > 0): ");
-                float power = Float.parseFloat(scanner.nextLine().trim());
-                if (power <= 0) {
-                    System.out.println("Мощность должна быть больше 0");
-                    continue;
-                }
-                vehicle.setEnginePower(power);
-                break;
-            } catch (NumberFormatException e) {
-                System.out.println("Ошибка: введите число");
-            }
-        }
-
-        while (true) {
-            System.out.print("Введите расход топлива (число > 0, Enter для null): ");
-            String input = scanner.nextLine().trim();
-
-            if (input.isEmpty()) {
-                vehicle.setFuelConsumption(null);
-                break;
-            }
-
-            try {
-                int fuel = Integer.parseInt(input);
-                if (fuel <= 0) {
-                    System.out.println("Расход должен быть больше 0");
-                    continue;
-                }
-                vehicle.setFuelConsumption(fuel);
-                break;
-            } catch (NumberFormatException e) {
-                System.out.println("Ошибка: введите целое число");
-            }
-        }
-
-        while (true) {
-            try {
-                System.out.print("Введите тип машины (PLANE, SUBMARINE, MOTORCYCLE): ");
-                String typeStr = scanner.nextLine().trim().toUpperCase();
-                VehicleType type = VehicleType.valueOf(typeStr);
-                vehicle.setType(type);
-                break;
-            } catch (IllegalArgumentException e) {
-                System.out.println("Ошибка: неверный тип. Доступны: PLANE, SUBMARINE, MOTORCYCLE");
-            }
-        }
-
-        while (true) {
-            try {
-                System.out.print("Введите тип топлива (KEROSENE, DIESEL, NUCLEAR): ");
-                String fuelTypeStr = scanner.nextLine().trim().toUpperCase();
-                FuelType fuelType = FuelType.valueOf(fuelTypeStr);
-                vehicle.setFuelType(fuelType);
-                break;
-            } catch (IllegalArgumentException e) {
-                System.out.println("Ошибка: неверный тип. Доступны: KEROSENE, DIESEL, NUCLEAR");
-            }
-        }
-
-        return vehicle;
+        return v;
     }
 
     public static void main(String[] args) {
-        Client client = new Client();
-        client.start();
+        new Client().start();
     }
 }

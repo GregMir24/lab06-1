@@ -1,40 +1,27 @@
 package common;
 
-import javax.xml.bind.annotation.XmlElement;
-import javax.xml.bind.annotation.XmlRootElement;
-import javax.xml.bind.annotation.XmlType;
-import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 import java.io.Serializable;
 import java.time.ZonedDateTime;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
-@XmlRootElement
-@XmlType(propOrder = {"id", "name", "coordinates", "creationDateObject", "enginePower",
-        "fuelConsumption", "type", "fuelType"})
 public class Vehicle implements Comparable<Vehicle>, Serializable {
     private static final long serialVersionUID = 1L;
 
-    private static Set<Integer> ids = new HashSet<>();
     private Integer id;
     private String name;
     private Coordinates coordinates;
-    private java.time.ZonedDateTime creationDate;
+    private ZonedDateTime creationDate;
     private float enginePower;
     private Integer fuelConsumption;
     private VehicleType type;
     private FuelType fuelType;
+    private String owner;
 
     public Vehicle() {
-        this.id = generateId();
         this.creationDate = ZonedDateTime.now();
     }
 
     public Vehicle(String name, Coordinates coordinates, float enginePower,
-                   Integer fuelConsumption, VehicleType type, FuelType fuelType) {
-        this.id = generateId();
+                   Integer fuelConsumption, VehicleType type, FuelType fuelType, String owner) {
         this.creationDate = ZonedDateTime.now();
         this.name = name;
         this.coordinates = coordinates;
@@ -42,42 +29,11 @@ public class Vehicle implements Comparable<Vehicle>, Serializable {
         this.fuelConsumption = fuelConsumption;
         this.type = type;
         this.fuelType = fuelType;
-    }
-
-    private static int generateId() {
-        if (ids.isEmpty()) {
-            ids.add(1);
-            return 1;
-        }
-
-        int expectedId = 1;
-        List<Integer> sorted = ids.stream().sorted().collect(Collectors.toList());
-
-        for (int id : sorted) {
-            if (id != expectedId) {
-                ids.add(expectedId);
-                return expectedId;
-            }
-            expectedId++;
-        }
-
-        ids.add(expectedId);
-        return expectedId;
-    }
-
-    public static void clearIds() {
-        ids.clear();
-    }
-
-    public static Set<Integer> getIds() {
-        return ids;
+        this.owner = owner;
     }
 
     public void setId(Integer id) {
-        if (id != null) {
-            this.id = id;
-            ids.add(id);
-        }
+        this.id = id;
     }
 
     public void setName(String name) {
@@ -123,45 +79,44 @@ public class Vehicle implements Comparable<Vehicle>, Serializable {
         this.creationDate = creationDate;
     }
 
-    @XmlElement
+    public void setOwner(String owner) {
+        this.owner = owner;
+    }
+
     public Integer getId() {
         return id;
     }
 
-    @XmlElement
     public String getName() {
         return name;
     }
 
-    @XmlElement
     public Coordinates getCoordinates() {
         return coordinates;
     }
 
-    @XmlElement
     public float getEnginePower() {
         return enginePower;
     }
 
-    @XmlElement
     public Integer getFuelConsumption() {
         return fuelConsumption;
     }
 
-    @XmlElement
     public VehicleType getType() {
         return type;
     }
 
-    @XmlElement
     public FuelType getFuelType() {
         return fuelType;
     }
 
-    @XmlElement
-    @XmlJavaTypeAdapter(ZonedDateTimeAdapter.class)
     public ZonedDateTime getCreationDateObject() {
         return creationDate;
+    }
+
+    public String getOwner() {
+        return owner;
     }
 
     @Override
@@ -185,8 +140,8 @@ public class Vehicle implements Comparable<Vehicle>, Serializable {
 
     @Override
     public String toString() {
-        return String.format("Vehicle{id=%d, name='%s', coords=(%d,%d), engine=%.1f, fuel=%s, type=%s}",
-                id, name,
+        return String.format("Vehicle{id=%d, name='%s', owner='%s', coords=(%d,%d), engine=%.1f, fuel=%s, type=%s}",
+                id, name, owner,
                 coordinates != null ? coordinates.getX() : 0,
                 coordinates != null ? coordinates.getY() : 0,
                 enginePower,
@@ -206,6 +161,7 @@ public class Vehicle implements Comparable<Vehicle>, Serializable {
         copy.fuelConsumption = this.fuelConsumption;
         copy.type = this.type;
         copy.fuelType = this.fuelType;
+        copy.owner = this.owner;
         return copy;
     }
 }
